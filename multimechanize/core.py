@@ -12,6 +12,7 @@ import multiprocessing
 import os
 import sys
 import threading
+import traceback
 import time
 
 from multimechanize.script_loader import ScriptLoader
@@ -41,7 +42,7 @@ def load_script(script_file):
 
 class UserGroup(multiprocessing.Process):
     def __init__(self, queue, process_num, user_group_name, num_threads,
-                 script_file, run_time, rampup):
+                 script_file, run_time, rampup, test_args):
         multiprocessing.Process.__init__(self)
         self.queue = queue
         self.process_num = process_num
@@ -51,6 +52,7 @@ class UserGroup(multiprocessing.Process):
         self.run_time = run_time
         self.rampup = rampup
         self.start_time = time.time()
+        self.test_args = test_args
 
     def run(self):
         # -- ENSURE: (Re-)Import script_module in forked Process
@@ -63,7 +65,7 @@ class UserGroup(multiprocessing.Process):
             agent_thread = Agent(self.queue, self.process_num, i,
                                  self.start_time, self.run_time,
                                  self.user_group_name,
-                                 script_module, self.script_file)
+                                 script_module, self.script_file, self.test_args)
             agent_thread.daemon = True
             threads.append(agent_thread)
             agent_thread.start()
@@ -74,7 +76,7 @@ class UserGroup(multiprocessing.Process):
 
 class Agent(threading.Thread):
     def __init__(self, queue, process_num, thread_num, start_time, run_time,
-                 user_group_name, script_module, script_file):
+                 user_group_name, script_module, script_file, test_args):
         threading.Thread.__init__(self)
         self.queue = queue
         self.process_num = process_num
@@ -84,6 +86,7 @@ class Agent(threading.Thread):
         self.user_group_name = user_group_name
         self.script_module = script_module
         self.script_file   = script_file
+        self.test_args = test_args
 
         # choose most accurate timer to use (time.clock has finer granularity
         # than time.time on windows, but shouldn't be used on other systems).
@@ -97,6 +100,7 @@ class Agent(threading.Thread):
         elapsed = 0
         trans = self.script_module.Transaction()
         trans.custom_timers = {}
+        trans.custom_fields = {}
 
         # scripts have access to these vars, which can be useful for loading unique data
         trans.thread_num = self.thread_num
@@ -107,9 +111,14 @@ class Agent(threading.Thread):
             start = self.default_timer()
 
             try:
-                trans.run()
+                if self.test_args:
+                    trans.run(self.test_args)
+                else:
+                    trans.run()
             except Exception, e:  # test runner catches all script exceptions here
                 error = str(e).replace(',', '')
+                traceback_string = "\n".join(traceback.format_exception(*sys.exc_info())).replace(",", ";")
+                error += "\n" + traceback_string
 
             finish = self.default_timer()
 

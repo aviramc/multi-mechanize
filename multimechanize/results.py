@@ -249,7 +249,7 @@ class Results(object):
         self.uniq_user_group_names = set()
 
         self.resp_stats_list = self.__parse_file()
-
+        
         self.epoch_start = self.resp_stats_list[0].epoch_secs
         self.epoch_finish = self.resp_stats_list[-1].epoch_secs
         self.start_datetime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.epoch_start))
@@ -291,8 +291,7 @@ class Results(object):
 
             r = ResponseStats(request_num, elapsed_time, epoch_secs, user_group_name, trans_time, error, custom_timers)
 
-            if elapsed_time < self.run_time:  # drop all times that appear after the last request was sent (incomplete interval)
-                resp_stats_list.append(r)
+            resp_stats_list.append(r)
 
             if error != '':
                 self.total_errors += 1
