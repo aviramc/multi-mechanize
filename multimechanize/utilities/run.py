@@ -39,6 +39,8 @@ def main():
     Main function to run multimechanize benchmark/performance test.
     """
 
+    sys.path.append(os.getcwd())
+
     usage = 'Usage: %prog <project name> [options]'
     parser = optparse.OptionParser(usage=usage, version=VERSION)
     parser.add_option('-p', '--port', dest='port', type='int', help='rpc listener port')
@@ -219,7 +221,11 @@ def configure(project_name, cmd_opts, config_file=None):
             test_args = {}
             for arg_name, arg_value in config.items(section):
                 if arg_name not in ['threads', 'script']:
-                    test_args[arg_name] = eval(arg_value)
+                    try:
+                        test_args[arg_name] = eval(arg_value, {}, {})
+                    except Exception, error:
+                        print 'Warning: did not manage to eval %r, considering it to be a string (error: %r)' % (arg_name, error)
+                        test_args[arg_name] = arg_value
             user_group_name = section
             ug_config = UserGroupConfig(threads, user_group_name, script, test_args)
             user_group_configs.append(ug_config)
