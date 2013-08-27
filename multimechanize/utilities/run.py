@@ -76,7 +76,7 @@ def run_test(project_name, cmd_opts, remote_starter=None):
         remote_starter.test_running = True
         remote_starter.output_dir = None
 
-    run_time, rampup, results_ts_interval, console_logging, progress_bar, results_database, post_run_script, xml_report, user_group_configs = configure(project_name, cmd_opts)
+    run_time, rampup, results_ts_interval, console_logging, progress_bar, results_database, post_run_script, xml_report, global_args, user_group_configs = configure(project_name, cmd_opts)
 
     run_localtime = time.localtime()
     output_dir = '%s/%s/results/results_%s' % (cmd_opts.projects_dir, project_name, time.strftime('%Y.%m.%d_%H.%M.%S/', run_localtime))
@@ -94,7 +94,8 @@ def run_test(project_name, cmd_opts, remote_starter=None):
     for i, ug_config in enumerate(user_group_configs):
         script_file = os.path.join(script_prefix, ug_config.script_file)
         ug = core.UserGroup(queue, i, ug_config.name, ug_config.num_threads,
-                            script_file, run_time, rampup, ug_config.test_args)
+                            script_file, run_time, rampup, global_args,
+                            ug_config.test_args)
         user_groups.append(ug)
     for user_group in user_groups:
         user_group.start()
@@ -172,7 +173,7 @@ def run_test(project_name, cmd_opts, remote_starter=None):
 def rerun_results(project_name, cmd_opts, results_dir):
     output_dir = '%s/%s/results/%s/' % (cmd_opts.projects_dir, project_name, results_dir)
     saved_config = '%s/config.cfg' % output_dir
-    run_time, rampup, results_ts_interval, console_logging, progress_bar, results_database, post_run_script, xml_report, user_group_configs = configure(project_name, cmd_opts, config_file=saved_config)
+    run_time, rampup, results_ts_interval, console_logging, progress_bar, results_database, post_run_script, xml_report, global_args, user_group_configs = configure(project_name, cmd_opts, config_file=saved_config)
     print '\n\nanalyzing results...\n'
     results.output_results(output_dir, 'results.csv', run_time, rampup, results_ts_interval, user_group_configs, xml_report)
     print 'created: %sresults.html\n' % output_dir
@@ -180,57 +181,57 @@ def rerun_results(project_name, cmd_opts, results_dir):
         print 'created: %sresults.jtl' % output_dir
         print 'created: last_results.jtl\n'
 
+def _get_option(get_method, section, option, default=None):
+    try:
+        return get_method(section, option)
+    except ConfigParser.NoOptionError:
+        return default
 
+def _extract_python_option(config, section, unwanted_options=None):
+    if unwanted_options is None:
+        unwanted_options = []
+    options = {}
+    for arg_name, arg_value in config.items(section):
+        if arg_name not in unwanted_options:
+            try:
+                options[arg_name] = eval(arg_value, {}, {})
+            except Exception, error:
+                print 'Warning: did not manage to eval %r, considering it to be a string (error: %r)' % (arg_name, error)
+                options[arg_name] = arg_value
+    return options
 
 def configure(project_name, cmd_opts, config_file=None):
     user_group_configs = []
+    global_section_options = ['run_time', 'rampup', 'results_ts_interval', 'console_logging', 'progress_bar', 'results_database', 'post_run_script', 'xml_report']
     config = ConfigParser.ConfigParser()
     if config_file is None:
         config_file = '%s/%s/config.cfg' % (cmd_opts.projects_dir, project_name)
     config.read(config_file)
+
     for section in config.sections():
         if section == 'global':
             run_time = config.getint(section, 'run_time')
             rampup = config.getint(section, 'rampup')
             results_ts_interval = config.getint(section, 'results_ts_interval')
-            try:
-                console_logging = config.getboolean(section, 'console_logging')
-            except ConfigParser.NoOptionError:
-                console_logging = False
-            try:
-                progress_bar = config.getboolean(section, 'progress_bar')
-            except ConfigParser.NoOptionError:
-                progress_bar = True
-            try:
-                results_database = config.get(section, 'results_database')
-                if results_database == 'None': results_database = None
-            except ConfigParser.NoOptionError:
+            console_logging = _get_option(config.getboolean, section, 'console_logging', False)
+            progress_bar = _get_option(config.getboolean, section, 'progress_bar', True)
+            results_database = _get_option(config.get, section, 'results_database', None)
+            if results_database == 'None':
                 results_database = None
-            try:
-                post_run_script = config.get(section, 'post_run_script')
-                if post_run_script == 'None': post_run_script = None
-            except ConfigParser.NoOptionError:
+            post_run_script = _get_option(config.get, section, 'post_run_script', None)
+            if post_run_script == 'None':
                 post_run_script = None
-            try:
-                xml_report = config.getboolean(section, 'xml_report')
-            except ConfigParser.NoOptionError:
-                xml_report = False
+            xml_report = _get_option(config.getboolean, section, 'xml_report', False)
+            global_args = _extract_python_option(config, 'global', global_section_options)
         else:
             threads = config.getint(section, 'threads')
             script = config.get(section, 'script')
-            test_args = {}
-            for arg_name, arg_value in config.items(section):
-                if arg_name not in ['threads', 'script']:
-                    try:
-                        test_args[arg_name] = eval(arg_value, {}, {})
-                    except Exception, error:
-                        print 'Warning: did not manage to eval %r, considering it to be a string (error: %r)' % (arg_name, error)
-                        test_args[arg_name] = arg_value
+            test_args = _extract_python_option(config, section, ['threads', 'script'])
             user_group_name = section
             ug_config = UserGroupConfig(threads, user_group_name, script, test_args)
             user_group_configs.append(ug_config)
 
-    return (run_time, rampup, results_ts_interval, console_logging, progress_bar, results_database, post_run_script, xml_report, user_group_configs)
+    return (run_time, rampup, results_ts_interval, console_logging, progress_bar, results_database, post_run_script, xml_report, global_args, user_group_configs)
 
 
 
