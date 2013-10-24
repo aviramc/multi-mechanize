@@ -194,7 +194,10 @@ def _extract_python_option(config, section, unwanted_options=None):
     for arg_name, arg_value in config.items(section):
         if arg_name not in unwanted_options:
             try:
-                options[arg_name] = eval(arg_value, {}, {})
+                if arg_value == "":
+                    options[arg_name] = arg_value
+                else:
+                    options[arg_name] = eval(arg_value, {}, {})
             except Exception, error:
                 print 'Warning: did not manage to eval %r, considering it to be a string (error: %r)' % (arg_name, error)
                 options[arg_name] = arg_value
